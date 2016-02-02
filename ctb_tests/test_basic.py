@@ -1,6 +1,6 @@
 from .create_data import make_random_genome, make_contigs, \
      write_genome_and_contigs
-from .utils import TempStuff, runquast
+from .utils import TempStuff, runquast, load_report, assert_match
 
 def test_simple():
     L2 = 10000
@@ -15,3 +15,7 @@ def test_simple():
     runquast(['-R', tmp.filename('genome.fa'),
               '-o', tmp.filename('output'),
               tmp.filename('contigs.fa')])
+
+    report = load_report(tmp.filename('output'))
+    assert_match(report, 'Largest alignment', 10000)
+    
