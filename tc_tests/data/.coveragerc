@@ -1,0 +1,5 @@
+[run]
+source=/Users/t/dev/quast
+omit=
+    /Users/t/dev/quast/env/*
+    /Users/t/dev/quast/libs/site_packages/*
