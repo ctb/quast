@@ -20,6 +20,7 @@ class TempStuff(object):
 
 def runquast(args):
     return quast.main(args)
+        
 
 def load_report(output_dir):
     reportfile = os.path.join(output_dir, 'report.tsv')
@@ -30,7 +31,7 @@ def load_report(output_dir):
         if firstline:
             firstline = False
             continue
-        line = line.split('\t', 1)
+        line = line.strip().split('\t', 1)
         try:
             d[line[0]] = float(line[1])
         except ValueError:
