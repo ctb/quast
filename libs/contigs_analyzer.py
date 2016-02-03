@@ -176,6 +176,26 @@ def check_nucmer_successful_check(fpath, contigs_fpath, ref_fpath):
     return True
 
 
+    #### auxiliary functions ####
+def distance_between_alignments(smgap, align1, align2, pos_strand1, pos_strand2, cyclic_ref_len=None):
+    # returns distance (in reference) between two alignments
+    if pos_strand1 or pos_strand2:            # alignment 1 should be earlier in reference
+        distance = align2.s1 - align1.e1 - 1
+    else:                     # alignment 2 should be earlier in reference
+        distance = align1.s1 - align2.e1 - 1
+    cyclic_moment = False
+    if cyclic_ref_len is not None:
+        cyclic_distance = distance
+        if align1.e1 < align2.e1 and (cyclic_ref_len - align2.e1 + align1.s1 - 1) < smgap:
+            cyclic_distance += cyclic_ref_len * (-1 if pos_strand1 else 1)
+        elif align1.e1 >= align2.e1 and (cyclic_ref_len - align1.e1 + align2.s1 - 1) < smgap:
+            cyclic_distance += cyclic_ref_len * (1 if pos_strand1 else -1)
+        if abs(cyclic_distance) < abs(distance):
+            distance = cyclic_distance
+            cyclic_moment = True
+    return distance, cyclic_moment
+
+
 def plantakolya(cyclic, index, contigs_fpath, nucmer_fpath, output_dirpath, ref_fpath, old_contigs_fpath, bed_fpath, parallel_by_chr):
     assembly_label = qutils.label_from_fpath_for_fname(contigs_fpath)
 
@@ -373,33 +393,14 @@ def plantakolya(cyclic, index, contigs_fpath, nucmer_fpath, output_dirpath, ref_
         aligns.setdefault(mapping.contig, []).append(mapping)
     avg_idy = sum_idy / num_idy if num_idy else 0
 
-    #### auxiliary functions ####
-    def distance_between_alignments(align1, align2, pos_strand1, pos_strand2, cyclic_ref_len=None):
-        # returns distance (in reference) between two alignments
-        if pos_strand1 or pos_strand2:            # alignment 1 should be earlier in reference
-            distance = align2.s1 - align1.e1 - 1
-        else:                     # alignment 2 should be earlier in reference
-            distance = align1.s1 - align2.e1 - 1
-        cyclic_moment = False
-        if cyclic_ref_len is not None:
-            cyclic_distance = distance
-            if align1.e1 < align2.e1 and (cyclic_ref_len - align2.e1 + align1.s1 - 1) < smgap:
-                cyclic_distance += cyclic_ref_len * (-1 if pos_strand1 else 1)
-            elif align1.e1 >= align2.e1 and (cyclic_ref_len - align1.e1 + align2.s1 - 1) < smgap:
-                cyclic_distance += cyclic_ref_len * (1 if pos_strand1 else -1)
-            if abs(cyclic_distance) < abs(distance):
-                distance = cyclic_distance
-                cyclic_moment = True
-        return distance, cyclic_moment
-
     def is_misassembly(align1, align2, cyclic_ref_lens=None):
         #Calculate inconsistency between distances on the reference and on the contig
         distance_on_contig = min(align2.e2, align2.s2) - max(align1.e2, align1.s2) - 1
         if cyclic_ref_lens is not None and align1.ref == align2.ref:
-            distance_on_reference, cyclic_moment = distance_between_alignments(align1, align2, align1.s2 < align1.e2,
+            distance_on_reference, cyclic_moment = distance_between_alignments(smgap, align1, align2, align1.s2 < align1.e2,
                 align2.s2 < align2.e2, cyclic_ref_lens[align1.ref])
         else:
-            distance_on_reference, cyclic_moment = distance_between_alignments(align1, align2, align1.s2 < align1.e2,
+            distance_on_reference, cyclic_moment = distance_between_alignments(smgap, align1, align2, align1.s2 < align1.e2,
                                                                                align2.s2 < align2.e2,)
 
         misassembly_internal_overlap = 0
