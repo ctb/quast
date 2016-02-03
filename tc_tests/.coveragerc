@@ -4,4 +4,5 @@ omit=
     /Users/t/dev/quast/env/*
     /Users/t/dev/quast/libs/site_packages/*
     /Users/t/dev/quast/tc_tests/*
+    /Users/t/dev/quast/ctb_tests/*
 data_file=/Users/t/dev/quast/.coverage

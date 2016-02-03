@@ -2,6 +2,7 @@ from .create_data import make_random_genome, make_contigs, \
      write_genome_and_contigs
 from .utils import TempStuff, runquast, load_report, assert_match
 import pprint
+import screed
 
 def test_basic():
     L2 = 10000
@@ -9,6 +10,40 @@ def test_basic():
 
     contig_ivals = [(10000, L2), (50000, L2)]
     contigs = make_contigs(genome, contig_ivals)
+
+    tmp = TempStuff('test1')
+    write_genome_and_contigs(tmp.dirname, [genome], contigs)
+
+    runquast(['-R', tmp.filename('genome.fa'),
+              '-o', tmp.filename('output'),
+              tmp.filename('contigs.fa')])
+
+    report = load_report(tmp.filename('output'))
+    assert_match(report, 'Largest alignment', 10000)
+    assert_match(report, '# unaligned contigs', '0 + 0 part')
+    assert_match(report, '# contigs (>= 10000 bp)', 2)
+    assert_match(report, '# contigs (>= 50000 bp)', 0)
+    assert_match(report, '# contigs', 2)
+    assert_match(report, 'Duplication ratio', 1.0)
+    assert_match(report, 'Genome fraction (%)', 20.0)
+    assert_match(report, 'Reference GC (%)', 50.0)
+    assert_match(report, 'Reference length', 100000.0)
+    assert_match(report, 'Largest contig', 10000.0)
+
+    #outfilename = 'test1_out/contigs_reports/contigs_report_contigs.stdout'
+    #out = open(outfilename).read()
+    #start = out.find('Uncovered Regions')
+    #print out[start:start+55]
+
+
+def test_basic_rc():
+    L2 = 10000
+    genome = make_random_genome(1e5)
+
+    contig_ivals = [(10000, L2), (50000, L2)]
+    contigs = make_contigs(genome, contig_ivals)
+
+    contigs[0] = screed.rc(contigs[0])
 
     tmp = TempStuff('test1')
     write_genome_and_contigs(tmp.dirname, [genome], contigs)
