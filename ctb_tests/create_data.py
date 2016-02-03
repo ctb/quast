@@ -1,10 +1,9 @@
 import random
 
 def make_random_genome(L):
-    L = int(1e5)
     nt = ['A', 'C', 'T', 'G']
 
-    genome = nt*(L/4)
+    genome = nt*int(L/4)
     random.shuffle(genome)
     genome = "".join(genome)
     return genome
