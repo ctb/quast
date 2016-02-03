@@ -420,6 +420,15 @@ def exclude_internal_overlaps(align1, align2, i, planta_out_f):
     return prev_len2 - align1.len2
 
 
+class SNP():
+    def __init__(self, ref=None, ctg=None, ref_pos=None, ctg_pos=None, ref_nucl=None, ctg_nucl=None):
+        self.ref_pos = ref_pos
+        self.ctg_pos = ctg_pos
+        self.ref_nucl = ref_nucl
+        self.ctg_nucl = ctg_nucl
+        self.type = 'I' if self.ref_nucl == '.' else ('D' if ctg_nucl == '.' else 'S')
+
+
 def plantakolya(cyclic, index, contigs_fpath, nucmer_fpath, output_dirpath, ref_fpath, old_contigs_fpath, bed_fpath, parallel_by_chr):
     assembly_label = qutils.label_from_fpath_for_fname(contigs_fpath)
 
@@ -691,14 +700,6 @@ def plantakolya(cyclic, index, contigs_fpath, nucmer_fpath, output_dirpath, ref_
     if qconfig.show_snps:
         print >> planta_out_f, 'Loading SNPs...'
 
-    class SNP():
-        def __init__(self, ref=None, ctg=None, ref_pos=None, ctg_pos=None, ref_nucl=None, ctg_nucl=None):
-            self.ref_pos = ref_pos
-            self.ctg_pos = ctg_pos
-            self.ref_nucl = ref_nucl
-            self.ctg_nucl = ctg_nucl
-            self.type = 'I' if self.ref_nucl == '.' else ('D' if ctg_nucl == '.' else 'S')
-
     if qconfig.show_snps:
         snps = {}
         prev_line = None
@@ -797,11 +798,13 @@ def plantakolya(cyclic, index, contigs_fpath, nucmer_fpath, output_dirpath, ref_
 
                 #Continue grabbing alignments while length and identity are identical
                 #while sorted_aligns and top_len == sorted_aligns[0].len2 and top_id == sorted_aligns[0].idy:
+                # @CTB
                 while sorted_aligns and ((sorted_aligns[0].len2 * sorted_aligns[0].idy) / (top_len * top_id) > epsilon):
                     top_aligns.append(sorted_aligns[0])
                     sorted_aligns = sorted_aligns[1:]
 
                 #Mark other alignments as ambiguous
+                # @CTB
                 while sorted_aligns:
                     ambig = sorted_aligns.pop()
                     print >> planta_out_f, '\t\tMarking as insignificant: %s' % str(ambig) # former ambiguous
@@ -814,7 +817,7 @@ def plantakolya(cyclic, index, contigs_fpath, nucmer_fpath, output_dirpath, ref_
                     print >> coords_filtered_file, str(top_aligns[0])
                     aligned_lengths.append(top_aligns[0].len2)
                 else:
-                    #There is more than one top align
+                    #There is more than one top align #@CTB
                     print >> planta_out_f, '\t\tThis contig has %d significant alignments. [An ambiguously mapped contig]' % len(
                         top_aligns)
 
@@ -972,7 +975,7 @@ def plantakolya(cyclic, index, contigs_fpath, nucmer_fpath, output_dirpath, ref_
                     #Is the contig aligned in the reverse compliment?
                     #Record beginning and end of alignment in contig
                     if the_only_align.s2 > the_only_align.e2:
-                        end, begin = the_only_align.s2, the_only_align.e2
+                        end, begin = the_only_align.s2, the_only_align.e2 #@CTB
                     else:
                         end, begin = the_only_align.e2, the_only_align.s2
 
@@ -987,7 +990,7 @@ def plantakolya(cyclic, index, contigs_fpath, nucmer_fpath, output_dirpath, ref_
                         print >> planta_out_f, '\t\tAlignment: %s' % str(the_only_align)
                         if begin - 1:
                             print >> planta_out_f, '\t\tUnaligned bases: 1 to %d (%d)' % (begin - 1, begin - 1)
-                        if ctg_len - end:
+                        if ctg_len - end: # @CTB
                             print >> planta_out_f, '\t\tUnaligned bases: %d to %d (%d)' % (end + 1, ctg_len, ctg_len - end)
                         # check if both parts (aligned and unaligned) have significant length
                         if (unaligned_bases >= qconfig.min_contig) and (ctg_len - unaligned_bases >= qconfig.min_contig):
@@ -1003,7 +1006,7 @@ def plantakolya(cyclic, index, contigs_fpath, nucmer_fpath, output_dirpath, ref_
                     sorted_aligns = sorted(real_aligns, key=lambda x: (min(x.s2, x.e2), max(x.s2, x.e2)))
 
                     #Extra skipping of redundant alignments (fully or almost fully covered by adjacent alignments)
-                    if len(sorted_aligns) >= 3:
+                    if len(sorted_aligns) >= 3: #@CTB
                         was_extra_skip = False
                         prev_end = max(sorted_aligns[0].s2, sorted_aligns[0].e2)
                         for i in range(1, len(sorted_aligns) - 1):
@@ -1037,7 +1040,7 @@ def plantakolya(cyclic, index, contigs_fpath, nucmer_fpath, output_dirpath, ref_
                     last_e2 = 0
                     for cur_align in sorted_aligns:
                         if max(cur_align.s2, cur_align.e2) <= last_e2:
-                            continue
+                            continue #@CTB
                         elif min(cur_align.s2, cur_align.e2) > last_e2:
                             aligned_bases_in_contig += (abs(cur_align.e2 - cur_align.s2) + 1)
                         else:
@@ -1045,7 +1048,7 @@ def plantakolya(cyclic, index, contigs_fpath, nucmer_fpath, output_dirpath, ref_
                         last_e2 = max(cur_align.s2, cur_align.e2)
 
                     #aligned_bases_in_contig = sum(x.len2 for x in sorted_aligns)
-                    if aligned_bases_in_contig < umt * ctg_len:
+                    if aligned_bases_in_contig < umt * ctg_len: #@CTB
                         print >> planta_out_f, '\t\t\tWarning! This contig is more unaligned than misassembled. ' + \
                             'Contig length is %d and total length of all aligns is %d' % (ctg_len, aligned_bases_in_contig)
                         partially_unaligned_with_misassembly += 1
@@ -1138,12 +1141,12 @@ def plantakolya(cyclic, index, contigs_fpath, nucmer_fpath, output_dirpath, ref_
             print >> planta_out_f, '\t\tRegion: %d to %d (%d bp)' % (region[0], region[1], reg_length)
 
             #Skipping alignments not in the next region
-            while sorted_aligns and sorted_aligns[0].e1 < region[0]:
+            while sorted_aligns and sorted_aligns[0].e1 < region[0]: # @CTB
                 skipped = sorted_aligns[0]
                 sorted_aligns = sorted_aligns[1:] # Kolya: slooow, but should never happens without gff :)
                 print >> planta_out_f, '\t\t\tThis align occurs before our region of interest, skipping: %s' % skipped
 
-            if not sorted_aligns:
+            if not sorted_aligns: #@CTB
                 print >> planta_out_f, '\t\t\tThere are no more aligns. Skipping this region.'
                 continue
 
@@ -1175,7 +1178,7 @@ def plantakolya(cyclic, index, contigs_fpath, nucmer_fpath, output_dirpath, ref_
                     sorted_aligns[0].s2 -= snip_left
 
             #No aligns in this region
-            if sorted_aligns[0].s1 > region[1]:
+            if sorted_aligns[0].s1 > region[1]: #@CTB
                 print >> planta_out_f, '\t\t\tThere are no aligns within this region.'
                 gaps.append([reg_length, 'START', 'END'])
                 #Increment uncovered region count and bases
@@ -1204,7 +1207,7 @@ def plantakolya(cyclic, index, contigs_fpath, nucmer_fpath, output_dirpath, ref_
                     print >> planta_out_f, '\t...%d of %d' % (counter, total_aligns)
                 end = False
                 #Check to see if previous gap was negative
-                if negative:
+                if negative: # @CTB
                     print >> planta_out_f, '\t\t\tPrevious gap was negative, modifying coordinates to ignore overlap'
                     #Ignoring OL part of next contig, no SNPs or N's will be recorded
                     snip_left = current.e1 + 1 - sorted_aligns[0].s1
@@ -1239,7 +1242,7 @@ def plantakolya(cyclic, index, contigs_fpath, nucmer_fpath, output_dirpath, ref_
 
                 if not sorted_aligns or current.e1 >= region[1] or sorted_aligns[0].s1 > region[1]:
                     #Check if last alignment ends before the regions does (gap at end of the region)
-                    if current.e1 >= region[1]:
+                    if current.e1 >= region[1]: #@CTB
                         #print "Ends inside current alignment.\n";
                         print >> planta_out_f, '\t\t\tEND in current alignment.  Modifying %d to %d.' % (current.e1, region[1])
                         #Pushing the rest of the alignment back on the stack
@@ -1296,7 +1299,7 @@ def plantakolya(cyclic, index, contigs_fpath, nucmer_fpath, output_dirpath, ref_
                             for i in xrange(current.e1, next.s1):
                                 if (ref in ref_features) and (i in ref_features[ref]) and (ref_features[ref][i] == 'A'):
                                     region_ambig += 1
-                        elif next.s1 <= current.e1:
+                        elif next.s1 <= current.e1: #@CTB
                             #This alignment overlaps with the next alignment, negative gap
                             #If contig extends past the region, clip
                             if current.e1 > region[1]:
