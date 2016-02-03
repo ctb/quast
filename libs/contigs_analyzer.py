@@ -627,6 +627,61 @@ def find_all_sv(bed_fpath):
                 region_struct_variations.relocations.append((align1, align2))
     return region_struct_variations
 
+
+def load_alignments(coords_fpath, coords_filtered_file):
+    aligns = {}
+    coords_file = open(coords_fpath)
+    coords_filtered_file.write(coords_file.readline())
+    coords_filtered_file.write(coords_file.readline())
+    sum_idy = 0.0
+    num_idy = 0
+    for line in coords_file:
+        if line.strip() == '':
+            break
+        assert line[0] != '='
+        #Clear leading spaces from nucmer output
+        #Store nucmer lines in an array
+        mapping = Mapping.from_line(line)
+        sum_idy += mapping.idy
+        num_idy += 1
+        aligns.setdefault(mapping.contig, []).append(mapping)
+    avg_idy = sum_idy / num_idy if num_idy else 0
+
+    return aligns, avg_idy
+
+def load_references(ref_fpath, planta_out_f):
+    references = {}
+    for name, seq in fastaparser.read_fasta(ref_fpath):
+        name = name.split()[0]  # no spaces in reference header
+        references[name] = seq
+        print >> planta_out_f, '\tLoaded [%s]' % name
+
+    return references
+
+def load_snps_fpath(show_snps_fpath):
+    snps = {}
+    prev_line = None
+    for line in open(show_snps_fpath):
+        #print "$line";
+        line = line.split()
+        if not line[0].isdigit():
+            continue
+        if prev_line and line == prev_line:
+            continue
+        ref = line[10]
+        ctg = line[11]
+        pos = int(line[0]) # Kolya: python don't convert int<->str types automatically
+        loc = int(line[3]) # Kolya: same as above
+
+        # if (! exists $line[11]) { die "Malformed line in SNP file.  Please check that show-snps has completed succesfully.\n$line\n[$line[9]][$line[10]][$line[11]]\n"; }
+        if pos in snps.setdefault(ref, {}).setdefault(ctg, {}):
+            snps.setdefault(ref, {}).setdefault(ctg, {})[pos].append(SNP(ref_pos=pos, ctg_pos=loc, ref_nucl=line[1], ctg_nucl=line[2]))
+        else:
+            snps.setdefault(ref, {}).setdefault(ctg, {})[pos] = [SNP(ref_pos=pos, ctg_pos=loc, ref_nucl=line[1], ctg_nucl=line[2])]
+        prev_line = line
+
+    return snps
+
 def plantakolya(cyclic, index, contigs_fpath, nucmer_fpath, output_dirpath, ref_fpath, old_contigs_fpath, bed_fpath, parallel_by_chr):
     assembly_label = qutils.label_from_fpath_for_fname(contigs_fpath)
 
@@ -685,60 +740,21 @@ def plantakolya(cyclic, index, contigs_fpath, nucmer_fpath, output_dirpath, ref_
 
     # Loading the alignment files
     print >> planta_out_f, 'Parsing coords...'
-    aligns = {}
-    coords_file = open(coords_fpath)
     coords_filtered_file = open(coords_filtered_fpath, 'w')
-    coords_filtered_file.write(coords_file.readline())
-    coords_filtered_file.write(coords_file.readline())
-    sum_idy = 0.0
-    num_idy = 0
-    for line in coords_file:
-        if line.strip() == '':
-            break
-        assert line[0] != '='
-        #Clear leading spaces from nucmer output
-        #Store nucmer lines in an array
-        mapping = Mapping.from_line(line)
-        sum_idy += mapping.idy
-        num_idy += 1
-        aligns.setdefault(mapping.contig, []).append(mapping)
-    avg_idy = sum_idy / num_idy if num_idy else 0
+    aligns, avg_idy = load_alignments(coords_fpath, coords_filtered_file)
 
     # Loading the reference sequences
     print >> planta_out_f, 'Loading reference...'  # TODO: move up
-    references = {}
+    references = load_references(ref_fpath, planta_out_f)
     ref_aligns = {}
     ref_features = {}
-    for name, seq in fastaparser.read_fasta(ref_fpath):
-        name = name.split()[0]  # no spaces in reference header
-        references[name] = seq
-        print >> planta_out_f, '\tLoaded [%s]' % name
 
     #Loading the SNP calls
     if qconfig.show_snps:
         print >> planta_out_f, 'Loading SNPs...'
 
     if qconfig.show_snps:
-        snps = {}
-        prev_line = None
-        for line in open(show_snps_fpath):
-            #print "$line";
-            line = line.split()
-            if not line[0].isdigit():
-                continue
-            if prev_line and line == prev_line:
-                continue
-            ref = line[10]
-            ctg = line[11]
-            pos = int(line[0]) # Kolya: python don't convert int<->str types automatically
-            loc = int(line[3]) # Kolya: same as above
-
-            # if (! exists $line[11]) { die "Malformed line in SNP file.  Please check that show-snps has completed succesfully.\n$line\n[$line[9]][$line[10]][$line[11]]\n"; }
-            if pos in snps.setdefault(ref, {}).setdefault(ctg, {}):
-                snps.setdefault(ref, {}).setdefault(ctg, {})[pos].append(SNP(ref_pos=pos, ctg_pos=loc, ref_nucl=line[1], ctg_nucl=line[2]))
-            else:
-                snps.setdefault(ref, {}).setdefault(ctg, {})[pos] = [SNP(ref_pos=pos, ctg_pos=loc, ref_nucl=line[1], ctg_nucl=line[2])]
-            prev_line = line
+        snps = load_snps_fpath(show_snps_fpath)
         used_snps_file = open(used_snps_fpath, 'w')
 
     # Loading the regions (if any)
