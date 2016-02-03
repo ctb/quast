@@ -196,6 +196,41 @@ def distance_between_alignments(smgap, align1, align2, pos_strand1, pos_strand2,
     return distance, cyclic_moment
 
 
+def is_misassembly(smgap, region_struct_variations, align1, align2, cyclic_ref_lens=None):
+    #Calculate inconsistency between distances on the reference and on the contig
+    distance_on_contig = min(align2.e2, align2.s2) - max(align1.e2, align1.s2) - 1
+    if cyclic_ref_lens is not None and align1.ref == align2.ref:
+        distance_on_reference, cyclic_moment = distance_between_alignments(smgap, align1, align2, align1.s2 < align1.e2,
+            align2.s2 < align2.e2, cyclic_ref_lens[align1.ref])
+    else:
+        distance_on_reference, cyclic_moment = distance_between_alignments(smgap, align1, align2, align1.s2 < align1.e2,
+                                                                           align2.s2 < align2.e2,)
+
+    misassembly_internal_overlap = 0
+    if distance_on_contig < 0:
+        if distance_on_reference >= 0:
+            misassembly_internal_overlap = (-distance_on_contig)
+        elif (-distance_on_reference) < (-distance_on_contig):
+            misassembly_internal_overlap = (distance_on_reference - distance_on_contig)
+
+    strand1 = (align1.s2 < align1.e2)
+    strand2 = (align2.s2 < align2.e2)
+    inconsistency = distance_on_reference - distance_on_contig
+    aux_data = {"inconsistency": inconsistency, "distance_on_contig": distance_on_contig,
+                "misassembly_internal_overlap": misassembly_internal_overlap, "cyclic_moment": cyclic_moment,
+                "is_sv": False}
+    if region_struct_variations:
+        #check if it is structural variation
+        is_sv = check_sv(align1, align2, inconsistency, region_struct_variations)
+        if is_sv:
+            aux_data['is_sv'] = True
+            return False, aux_data
+    # different chromosomes or large inconsistency (a gap or an overlap) or different strands
+    if align1.ref != align2.ref or abs(inconsistency) > smgap or (strand1 != strand2):
+        return True, aux_data
+    else:
+        return False, aux_data
+
 def plantakolya(cyclic, index, contigs_fpath, nucmer_fpath, output_dirpath, ref_fpath, old_contigs_fpath, bed_fpath, parallel_by_chr):
     assembly_label = qutils.label_from_fpath_for_fname(contigs_fpath)
 
@@ -393,41 +428,6 @@ def plantakolya(cyclic, index, contigs_fpath, nucmer_fpath, output_dirpath, ref_
         aligns.setdefault(mapping.contig, []).append(mapping)
     avg_idy = sum_idy / num_idy if num_idy else 0
 
-    def is_misassembly(align1, align2, cyclic_ref_lens=None):
-        #Calculate inconsistency between distances on the reference and on the contig
-        distance_on_contig = min(align2.e2, align2.s2) - max(align1.e2, align1.s2) - 1
-        if cyclic_ref_lens is not None and align1.ref == align2.ref:
-            distance_on_reference, cyclic_moment = distance_between_alignments(smgap, align1, align2, align1.s2 < align1.e2,
-                align2.s2 < align2.e2, cyclic_ref_lens[align1.ref])
-        else:
-            distance_on_reference, cyclic_moment = distance_between_alignments(smgap, align1, align2, align1.s2 < align1.e2,
-                                                                               align2.s2 < align2.e2,)
-
-        misassembly_internal_overlap = 0
-        if distance_on_contig < 0:
-            if distance_on_reference >= 0:
-                misassembly_internal_overlap = (-distance_on_contig)
-            elif (-distance_on_reference) < (-distance_on_contig):
-                misassembly_internal_overlap = (distance_on_reference - distance_on_contig)
-
-        strand1 = (align1.s2 < align1.e2)
-        strand2 = (align2.s2 < align2.e2)
-        inconsistency = distance_on_reference - distance_on_contig
-        aux_data = {"inconsistency": inconsistency, "distance_on_contig": distance_on_contig,
-                    "misassembly_internal_overlap": misassembly_internal_overlap, "cyclic_moment": cyclic_moment,
-                    "is_sv": False}
-        if region_struct_variations:
-            #check if it is structural variation
-            is_sv = check_sv(align1, align2, inconsistency, region_struct_variations)
-            if is_sv:
-                aux_data['is_sv'] = True
-                return False, aux_data
-        # different chromosomes or large inconsistency (a gap or an overlap) or different strands
-        if align1.ref != align2.ref or abs(inconsistency) > smgap or (strand1 != strand2):
-            return True, aux_data
-        else:
-            return False, aux_data
-
     def check_sv(align1, align2, inconsistency, region_struct_variations):
         max_error = 100 # smgap / 4  # min(2 * smgap, max(smgap, inconsistency * 0.05))
         max_gap = smgap / 4
@@ -563,7 +563,7 @@ def plantakolya(cyclic, index, contigs_fpath, nucmer_fpath, output_dirpath, ref_
         for i in range(len(sorted_aligns) - 1):
             cur_aligned_length -= exclude_internal_overlaps(sorted_aligns[i], sorted_aligns[i+1], i)
             print >> planta_out_f, '\t\t\tReal Alignment %d: %s' % (i+1, str(sorted_aligns[i]))
-            is_extensive_misassembly, aux_data = is_misassembly(sorted_aligns[i], sorted_aligns[i+1],
+            is_extensive_misassembly, aux_data = is_misassembly(smgap, region_struct_variations, sorted_aligns[i], sorted_aligns[i+1],
                 reg_lens if cyclic else None)
             inconsistency = aux_data["inconsistency"]
             distance_on_contig = aux_data["distance_on_contig"]
@@ -917,7 +917,7 @@ def plantakolya(cyclic, index, contigs_fpath, nucmer_fpath, output_dirpath, ref_
                         count = 0
                         sorted_aligns = sorted(aligns, key=lambda x: (min(x.s2, x.e2), max(x.s2, x.e2)))
                         for i in range(len(sorted_aligns) - 1):
-                            is_extensive_misassembly, _ = is_misassembly(sorted_aligns[i], sorted_aligns[i+1], cyclic_ref_lens)
+                            is_extensive_misassembly, _ = is_misassembly(smgap, region_struct_variations, sorted_aligns[i], sorted_aligns[i+1], cyclic_ref_lens)
                             if is_extensive_misassembly:
                                 count += 1
                         return count
