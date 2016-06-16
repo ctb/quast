@@ -2,7 +2,6 @@ import tempfile
 import os.path
 import sys
 from cStringIO import StringIO
-import nose
 
 p = os.path.dirname(__file__)
 p = os.path.join(p, '..')
