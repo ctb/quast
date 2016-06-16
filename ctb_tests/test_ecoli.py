@@ -55,7 +55,7 @@ def test_1():
 
         
         if open(new_file).read() != open(old_file).read():
-            print '%s differs from %s' % (new_file, old_file)
+            print '*** %s differs from %s' % (new_file, old_file)
             is_diff = True
     if is_diff:
         assert 0, 'differences exist'
