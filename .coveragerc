@@ -1,0 +1,3 @@
+[run]
+include=metaquast.py,quast.py,libs/*.py
+omit=.buildenv/*
