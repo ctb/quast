@@ -200,6 +200,62 @@ def test_misassembly():
     assert_match(report, 'Genome fraction (%)', 15.0)
 
 
+def test_misassembly_plus_unaligned():
+    import random
+    random.seed(1)                      # otherwise, "Largest alignment" varies
+
+    L2 = 10000
+
+    genome1 = make_random_genome(1e5)
+
+    contig_ivals = [(10000, L2), (50000, L2)]
+    contigs = make_contigs(genome1, contig_ivals)
+
+    # make a misassembled contig
+    last_contig = contigs[-1]
+    contigs = contigs[:-1]
+    last_contig = last_contig[L2/2:] + last_contig[:L2/2]
+    contigs.append(last_contig)
+
+    # make a contig part of which aligns to nothing.
+    noalign = make_random_genome(L2/2)
+    contigs[0] = noalign + contigs[0][:L2/2]
+
+    # make another contig, none of which aligns
+    contigs.append(make_random_genome(L2))
+
+    tmp = TempStuff('test2')
+    write_genome_and_contigs(tmp.dirname, [genome1], contigs)
+
+    runquast(['-R', tmp.filename('genome.fa'),
+              '-o', tmp.filename('output'),
+              tmp.filename('contigs.fa')])
+
+    report = load_report(tmp.filename('output'))
+    pprint.pprint(report)
+    assert_match(report, 'Largest alignment', 5002)
+    assert_match(report, '# misassemblies', 1)
+    assert_match(report, '# misassembled contigs', 1.0)
+    assert_match(report, 'Misassembled contigs length', 10000.0)
+    assert_match(report, '# unaligned contigs', '1 + 1 part')
+    assert_match(report, '# contigs (>= 10000 bp)', 3)
+    assert_match(report, '# contigs (>= 50000 bp)', 0)
+    assert_match(report, '# contigs', 3)
+    assert_match(report, 'Unaligned length', 15000)
+    assert_match(report, 'Total length', 30000.0)
+    assert_match(report, 'Total length (>= 0 bp)', 30000.0)
+    assert_match(report, 'Total length (>= 1000 bp)', 30000.0)
+    assert_match(report, 'Total length (>= 10000 bp)', 30000.0)
+    assert_match(report, 'Total length (>= 25000 bp)', 0.0)
+    assert_match(report, 'Total length (>= 5000 bp)', 30000.0)
+    assert_match(report, 'Total length (>= 50000 bp)', 0.0)
+    assert_match(report, '# contigs (>= 0 bp)', 3.0)
+    assert_match(report, '# contigs (>= 1000 bp)', 3.0)
+    assert_match(report, '# contigs (>= 25000 bp)', 0.0)
+    assert_match(report, '# contigs (>= 5000 bp)', 3.0)
+    assert_match(report, 'Genome fraction (%)', 15.0)
+
+
 def test_ns_per_kb():
     import random
     random.seed(2)                      # otherwise, "Largest alignment" varies
