@@ -946,7 +946,7 @@ def plantakolya_analyze_contigs(coords_filtered_file, unaligned_file,
                     sorted_aligns = sorted(real_aligns, key=lambda x: (min(x.s2, x.e2), max(x.s2, x.e2)))
 
                     #Extra skipping of redundant alignments (fully or almost fully covered by adjacent alignments)
-                    if len(sorted_aligns) >= 3: #@CTB
+                    if len(sorted_aligns) >= 3: #@CTB XX
                         was_extra_skip = False
                         prev_end = max(sorted_aligns[0].s2, sorted_aligns[0].e2)
                         for i in range(1, len(sorted_aligns) - 1):
@@ -988,7 +988,7 @@ def plantakolya_analyze_contigs(coords_filtered_file, unaligned_file,
                         last_e2 = max(cur_align.s2, cur_align.e2)
 
                     #aligned_bases_in_contig = sum(x.len2 for x in sorted_aligns)
-                    if aligned_bases_in_contig < umt * ctg_len: #@CTB
+                    if aligned_bases_in_contig < umt * ctg_len: #@CTB XX
                         print >> planta_out_f, '\t\t\tWarning! This contig is more unaligned than misassembled. ' + \
                             'Contig length is %d and total length of all aligns is %d' % (ctg_len, aligned_bases_in_contig)
                         partially_unaligned_with_misassembly += 1
@@ -1083,7 +1083,7 @@ def plantakolya_analyze_coverage(regions, planta_out_f, total_indels_info,
             print >> planta_out_f, '\t\tRegion: %d to %d (%d bp)' % (region[0], region[1], reg_length)
 
             #Skipping alignments not in the next region
-            while sorted_aligns and sorted_aligns[0].e1 < region[0]: # @CTB
+            while sorted_aligns and sorted_aligns[0].e1 < region[0]: # @CTB XX
                 skipped = sorted_aligns[0]
                 sorted_aligns = sorted_aligns[1:] # Kolya: slooow, but should never happens without gff :)
                 print >> planta_out_f, '\t\t\tThis align occurs before our region of interest, skipping: %s' % skipped
