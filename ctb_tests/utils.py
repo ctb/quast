@@ -18,7 +18,13 @@ class TempStuff(object):
         return path
 
 def runquast(args):
-    return quast.main(args)
+    import libs.plotter
+    libs.plotter.dict_color_and_ls = {}
+
+    try:
+        return quast.main(args)
+    finally:
+        libs.plotter.dict_color_and_ls = {}
         
 
 def load_report(output_dir):
