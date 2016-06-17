@@ -163,7 +163,9 @@ def test_5():
     print logtext
     assert 'Reference someref: 1 total alignments. 1 total regions.' in logtext
     assert 'There are no aligns within this region.' in logtext
-    # assert 0 is this right??
+    print uncovered_regions, uncovered_region_bases
+    assert uncovered_regions == 1
+    assert uncovered_region_bases == 26
 
 
 def test_6():
