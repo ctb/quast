@@ -1075,6 +1075,8 @@ def plantakolya_analyze_coverage(regions, planta_out_f, total_indels_info,
     snip_right = 0
     nothing_aligned = True
     total_redundant = 0
+    uncovered_regions = 0
+    uncovered_region_bases = 0
 
     # for counting short and long indels
     # indels_list = []  # -- defined earlier
