@@ -1038,6 +1038,30 @@ def plantakolya_analyze_contigs(coords_filtered_file, unaligned_file,
     return unaligned, partially_unaligned, fully_unaligned_bases, partially_unaligned_bases, ambiguous_contigs, ambiguous_contigs_extra_bases, uncovered_regions, uncovered_region_bases, partially_unaligned_with_misassembly, partially_unaligned_with_significant_parts, misassembly_internal_overlap, contigs_with_istranslocations, contig_ns, region_misassemblies, misassembled_contigs, ref_features, references_misassemblies, misassemblies_matched_sv
 
 
+#
+# regions -- dictionary, keys are reference names, value is list of
+#    (start, stop)
+# planta_out_f -- file handle for log
+# total_indels_info. Only used if 'snps' nonempty (?)
+# ref_aligns -- dictionary, keys are refnames, values are lists of
+#    objects with (s1, s2, e1, e2, contig) attributes.
+# ref_features - unsure; seems to be only used if 'snps' non empty.
+# snps -- dictionary of SNPs in ref, not currently tested (pass in empty).
+# contig_ns -- list of 'N' positions in contig; only used if 'snps' nonempty.
+# used_snps_file - output file for snps. only used if 'snps' nonempty.
+#
+
+# returns:
+# total_indels_info, obj w/insertions, deletions, mismatches - all int -
+#   and indels_list, a list of names of indels
+# region_covered - integer
+# region_ambig - intger
+# gaps - list of 3-tuples, (size, current contig name, next contig name)
+# neg_gaps - list of 3 tuples, (size, current contig name, next contig name)
+# redundant - list of redundant contigs
+# nothing_aligned - bool, whether or not anything aligned
+# total_redundant - redundantly covered bases (int)
+
 
 def plantakolya_analyze_coverage(regions, planta_out_f, total_indels_info,
                                  ref_aligns, ref_features, snps, contig_ns,
