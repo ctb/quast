@@ -39,3 +39,5 @@ libs/Busco/hmmer-3.1b2-mac/
 libs/bwa-master/make.*
 
 libs/blast/16S_RNA_blastdb/
+
+*~

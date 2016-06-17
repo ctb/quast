@@ -1,0 +1,14 @@
+reference chromosomes:
+	mg1655__ref_NC_000913.2__Escherichia_coli_str._K-12_substr._MG1655_chromosome__complete_genome (total length: 4639675 bp, maximal covered length: 4550146 bp)
+
+total genome size: 4639675
+
+gap min size: 50
+partial gene/operon min size: 100
+
+
+
+assembly                 | genome    | duplication | gaps      | genes     | partial   | operons   | partial   |
+                         | fraction  | ratio       | number    |           | genes     |           | operons   |
+================================================================================================================
+megahit_5m_dn            | 98.07036% | 1.00079     | 84        | -         | -         | -         | -         |
