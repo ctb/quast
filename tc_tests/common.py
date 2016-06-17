@@ -230,9 +230,9 @@ def run_quast(name, contigs=None, params='', expected_exit_code=0, meta=False):
         contigs = [contigs_10k_1, contigs_10k_2]
 
     os.chdir('data')
-    quast_fpath = '../../quast.py'
+    quast_fpath = '/Users/t/dev/quast/env/bin/coverage run --rcfile ../.coveragerc -a ../../quast.py'
     if meta:
-        quast_fpath = '../../metaquast.py'
+        quast_fpath = '/Users/t/dev/quast/env/bin/coverage run --rcfile ../.coveragerc -a ../../metaquast.py'
     cmd = quast_fpath + ' -o ../' + results_dirpath + ' ' + ' '.join(contigs) + ' ' + params
     print cmd
     print

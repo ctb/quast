@@ -1,0 +1,13 @@
+Assembly	megahit_5m_dn
+# misassemblies	3
+    # relocations	3
+    # translocations	0
+    # inversions	0
+# misassembled contigs	3
+Misassembled contigs length	119225
+# local misassemblies	6
+# mismatches	47
+# indels	4
+    # short indels	4
+    # long indels	0
+Indels length	5
