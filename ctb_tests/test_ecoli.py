@@ -36,7 +36,6 @@ def test_1():
         'contigs_reports/misassemblies_report.tsv',
         'contigs_reports/misassemblies_report.txt',
         'contigs_reports/nucmer_output/megahit_5m_dn.all_snps',
-        'contigs_reports/nucmer_output/megahit_5m_dn.coords',
         'contigs_reports/nucmer_output/megahit_5m_dn.coords.filtered',
         'contigs_reports/nucmer_output/megahit_5m_dn.unaligned',
         'contigs_reports/nucmer_output/megahit_5m_dn.used_snps',
