@@ -226,3 +226,129 @@ def test_7():
     assert 'START within alignment' in logtext
     assert 'Moving reference start from 0 to 25' in logtext
     assert 'Moving contig start from 50 to 25' in logtext
+
+
+def test_8():
+    planta_out_f = StringIO.StringIO()
+    total_indels_info = None
+    ref_aligns = {}
+    ref_features = {}
+    snps = []
+    contig_ns = []
+    used_snps_file = None
+
+    regions = { 'someref': [(0, 100)] }
+    ref_aligns = {}
+    ref_aligns['someref'] = [ Alignment(s1=0, s2=0, e1=50, e2=50,
+                                        contig='contig1'),
+                              Alignment(s1=51, s2=51, e1=100, e2=100,
+                                        contig='contig1'),
+                            ]
+
+
+    total_indels_info, region_covered, region_ambig, gaps, neg_gaps, \
+           redundant, nothing_aligned, total_redundant, \
+           uncovered_regions, uncovered_region_bases = \
+       plantakolya_analyze_coverage(regions, planta_out_f, total_indels_info,
+                                    ref_aligns, ref_features, snps, contig_ns,
+                                    used_snps_file)
+
+    logtext = planta_out_f.getvalue()
+    print logtext
+    assert 'Reference someref: 2 total alignments. 1 total regions.' in logtext
+
+
+def test_9():
+    planta_out_f = StringIO.StringIO()
+    total_indels_info = None
+    ref_aligns = {}
+    ref_features = {}
+    snps = []
+    contig_ns = []
+    used_snps_file = None
+
+    regions = { 'someref': [(0, 100)] }
+    ref_aligns = {}
+    ref_aligns['someref'] = [ Alignment(s1=0, s2=0, e1=50, e2=50,
+                                        contig='contig1'),
+                              Alignment(s1=41, s2=41, e1=100, e2=100,
+                                        contig='contig1'),
+                            ]
+
+
+    total_indels_info, region_covered, region_ambig, gaps, neg_gaps, \
+           redundant, nothing_aligned, total_redundant, \
+           uncovered_regions, uncovered_region_bases = \
+       plantakolya_analyze_coverage(regions, planta_out_f, total_indels_info,
+                                    ref_aligns, ref_features, snps, contig_ns,
+                                    used_snps_file)
+
+    logtext = planta_out_f.getvalue()
+    print logtext
+    assert 'Reference someref: 2 total alignments. 1 total regions.' in logtext
+
+
+def test_10_redundant_alignment():
+    planta_out_f = StringIO.StringIO()
+    total_indels_info = None
+    ref_aligns = {}
+    ref_features = {}
+    snps = []
+    contig_ns = []
+    used_snps_file = None
+
+    regions = { 'someref': [(0, 100)] }
+    ref_aligns = {}
+    ref_aligns['someref'] = [ Alignment(s1=0, s2=0, e1=90, e2=100,
+                                        contig='contig1'),
+                              Alignment(s1=41, s2=41, e1=80, e2=80,
+                                        contig='contig1'),
+                            ]
+
+
+    total_indels_info, region_covered, region_ambig, gaps, neg_gaps, \
+           redundant, nothing_aligned, total_redundant, \
+           uncovered_regions, uncovered_region_bases = \
+       plantakolya_analyze_coverage(regions, planta_out_f, total_indels_info,
+                                    ref_aligns, ref_features, snps, contig_ns,
+                                    used_snps_file)
+
+    logtext = planta_out_f.getvalue()
+    print logtext
+    assert 'Reference someref: 2 total alignments. 1 total regions.' in logtext
+    assert 'The next alignment (41 80 contig1 41 80) is redundant. Skipping.'\
+        in logtext
+
+
+def test_11_redundant_alignment():
+    planta_out_f = StringIO.StringIO()
+    total_indels_info = None
+    ref_aligns = {}
+    ref_features = {}
+    snps = []
+    contig_ns = []
+    used_snps_file = None
+
+    regions = { 'someref': [(0, 100)] }
+    ref_aligns = {}
+    ref_aligns['someref'] = [ Alignment(s1=0, s2=0, e1=90, e2=100,
+                                        contig='contig1'),
+                              Alignment(s1=41, s2=41, e1=80, e2=80,
+                                        contig='contig1'),
+                              Alignment(s1=41, s2=41, e1=80, e2=80,
+                                        contig='contig1'),
+                            ]
+
+
+    total_indels_info, region_covered, region_ambig, gaps, neg_gaps, \
+           redundant, nothing_aligned, total_redundant, \
+           uncovered_regions, uncovered_region_bases = \
+       plantakolya_analyze_coverage(regions, planta_out_f, total_indels_info,
+                                    ref_aligns, ref_features, snps, contig_ns,
+                                    used_snps_file)
+
+    logtext = planta_out_f.getvalue()
+    print logtext
+    assert 'Reference someref: 3 total alignments. 1 total regions.' in logtext
+    assert 'The next alignment (41 80 contig1 41 80) is redundant. Skipping.'\
+        in logtext
