@@ -1387,7 +1387,8 @@ def plantakolya_analyze_coverage(regions, planta_out_f, total_indels_info,
                 print >> planta_out_f
 
     return total_indels_info, region_covered, region_ambig, gaps, neg_gaps, \
-           redundant, nothing_aligned, total_redundant
+           redundant, nothing_aligned, total_redundant, uncovered_regions, \
+           uncovered_region_bases
 
 
 def plantakolya(cyclic, index, contigs_fpath, nucmer_fpath, output_dirpath, ref_fpath, old_contigs_fpath, bed_fpath, parallel_by_chr):
@@ -1509,7 +1510,8 @@ def plantakolya(cyclic, index, contigs_fpath, nucmer_fpath, output_dirpath, ref_
 
 
     total_indels_info, region_covered, region_ambig, gaps, neg_gaps,\
-                       redundant, nothing_aligned, total_redundant \
+                       redundant, nothing_aligned, total_redundant, \
+                       uncovered_regions, uncovered_region_bases \
                        = plantakolya_analyze_coverage(regions, planta_out_f,
                                                       total_indels_info,
                                                       ref_aligns, ref_features,

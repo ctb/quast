@@ -17,7 +17,8 @@ def test_empty():
     used_snps_file = None
     
     total_indels_info, region_covered, region_ambig, gaps, neg_gaps, \
-           redundant, nothing_aligned, total_redundant = \
+           redundant, nothing_aligned, total_redundant, \
+           uncovered_regions, uncovered_region_bases = \
        plantakolya_analyze_coverage(regions, planta_out_f, total_indels_info,
                                     ref_aligns, ref_features, snps, contig_ns,
                                     used_snps_file)
@@ -39,7 +40,8 @@ def test_empty_ref_aligns():
     ref_aligns = {}
 
     total_indels_info, region_covered, region_ambig, gaps, neg_gaps, \
-           redundant, nothing_aligned, total_redundant = \
+           redundant, nothing_aligned, total_redundant, \
+           uncovered_regions, uncovered_region_bases = \
        plantakolya_analyze_coverage(regions, planta_out_f, total_indels_info,
                                     ref_aligns, ref_features, snps, contig_ns,
                                     used_snps_file)
@@ -64,7 +66,8 @@ def test_2():
 
 
     total_indels_info, region_covered, region_ambig, gaps, neg_gaps, \
-           redundant, nothing_aligned, total_redundant = \
+           redundant, nothing_aligned, total_redundant, \
+           uncovered_regions, uncovered_region_bases = \
        plantakolya_analyze_coverage(regions, planta_out_f, total_indels_info,
                                     ref_aligns, ref_features, snps, contig_ns,
                                     used_snps_file)
@@ -90,7 +93,8 @@ def test_3():
 
 
     total_indels_info, region_covered, region_ambig, gaps, neg_gaps, \
-           redundant, nothing_aligned, total_redundant = \
+           redundant, nothing_aligned, total_redundant, \
+           uncovered_regions, uncovered_region_bases = \
        plantakolya_analyze_coverage(regions, planta_out_f, total_indels_info,
                                     ref_aligns, ref_features, snps, contig_ns,
                                     used_snps_file)
@@ -118,7 +122,8 @@ def test_4():
 
 
     total_indels_info, region_covered, region_ambig, gaps, neg_gaps, \
-           redundant, nothing_aligned, total_redundant = \
+           redundant, nothing_aligned, total_redundant, \
+           uncovered_regions, uncovered_region_bases = \
        plantakolya_analyze_coverage(regions, planta_out_f, total_indels_info,
                                     ref_aligns, ref_features, snps, contig_ns,
                                     used_snps_file)
@@ -148,7 +153,8 @@ def test_5():
 
 
     total_indels_info, region_covered, region_ambig, gaps, neg_gaps, \
-           redundant, nothing_aligned, total_redundant = \
+           redundant, nothing_aligned, total_redundant, \
+           uncovered_regions, uncovered_region_bases = \
        plantakolya_analyze_coverage(regions, planta_out_f, total_indels_info,
                                     ref_aligns, ref_features, snps, contig_ns,
                                     used_snps_file)
@@ -176,7 +182,8 @@ def test_6():
 
 
     total_indels_info, region_covered, region_ambig, gaps, neg_gaps, \
-           redundant, nothing_aligned, total_redundant = \
+           redundant, nothing_aligned, total_redundant, \
+           uncovered_regions, uncovered_region_bases = \
        plantakolya_analyze_coverage(regions, planta_out_f, total_indels_info,
                                     ref_aligns, ref_features, snps, contig_ns,
                                     used_snps_file)
@@ -205,7 +212,8 @@ def test_7():
 
 
     total_indels_info, region_covered, region_ambig, gaps, neg_gaps, \
-           redundant, nothing_aligned, total_redundant = \
+           redundant, nothing_aligned, total_redundant, \
+           uncovered_regions, uncovered_region_bases = \
        plantakolya_analyze_coverage(regions, planta_out_f, total_indels_info,
                                     ref_aligns, ref_features, snps, contig_ns,
                                     used_snps_file)
