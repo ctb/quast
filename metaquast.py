@@ -1,132 +1,40 @@
 #!/usr/bin/env python
 
 ############################################################################
-# Copyright (c) 2015 Saint Petersburg State University
+# Copyright (c) 2015-2020 Saint Petersburg State University
 # Copyright (c) 2011-2015 Saint Petersburg Academic University
 # All Rights Reserved
 # See file LICENSE for details.
 ############################################################################
 
-from __future__ import with_statement
 import sys
 import os
 import shutil
-import getopt
-import re
 
-from libs import qconfig
+try:
+   from collections import OrderedDict
+except ImportError:
+   from quast_libs.site_packages.ordered_dict import OrderedDict
+
+from quast_libs import qconfig
 qconfig.check_python_version()
-from libs import qutils, fastaparser
-from libs import search_references_meta
-from libs.qutils import assert_file_exists
-
-from libs.log import get_logger
-logger = get_logger(qconfig.LOGGER_META_NAME)
-logger.set_up_console_handler()
 
 from site import addsitedir
 addsitedir(os.path.join(qconfig.LIBS_LOCATION, 'site_packages'))
+from quast_libs.metautils import Assembly, correct_meta_references, correct_assemblies, \
+    get_downloaded_refs_with_alignments, partition_contigs, calculate_ave_read_support
+from quast_libs.options_parser import parse_options, remove_from_quast_py_args, prepare_regular_quast_args
 
-import quast
-from libs import contigs_analyzer, reads_analyzer
+from quast_libs import contigs_analyzer, search_references_meta, plotter_data, qutils
+from quast_libs.qutils import cleanup, check_dirpath, is_python2, run_parallel
 
-COMBINED_REF_FNAME = 'combined_reference.fasta'
-
-
-class Assembly:
-    def __init__(self, fpath, label):
-        self.fpath = fpath
-        self.label = label
-        self.name = os.path.splitext(os.path.basename(self.fpath))[0]
+from quast_libs.log import get_logger
+logger = get_logger(qconfig.LOGGER_META_NAME)
+logger.set_up_console_handler()
 
 
-def parallel_partition_contigs(asm, assemblies_by_ref, corrected_dirpath, alignments_fpath_template):
-    assembly_label = qutils.label_from_fpath(asm.fpath)
-    logger.info('  ' + 'processing ' + assembly_label)
-    added_ref_asm = []
-    not_aligned_fname = assembly_label + '_not_aligned_anywhere.fasta'
-    not_aligned_fpath = os.path.join(corrected_dirpath, not_aligned_fname)
-    contigs = {}
-    aligned_contig_names = set()
-    aligned_contigs_for_each_ref = {}
-    contigs_seq = fastaparser.read_fasta_one_time(asm.fpath)
-    if os.path.exists(alignments_fpath_template % assembly_label):
-        for line in open(alignments_fpath_template % assembly_label):
-            values = line.split()
-            if values[0] in contigs_analyzer.ref_labels_by_chromosomes.keys():
-                ref_name = contigs_analyzer.ref_labels_by_chromosomes[values[0]]
-                ref_contigs_names = values[1:]
-                ref_contigs_fpath = os.path.join(
-                    corrected_dirpath, assembly_label + '_to_' + ref_name[:40] + '.fasta')
-                if ref_name not in aligned_contigs_for_each_ref:
-                    aligned_contigs_for_each_ref[ref_name] = []
-
-                for (cont_name, seq) in contigs_seq:
-                    if not cont_name in contigs:
-                        contigs[cont_name] = seq
-
-                    if cont_name in ref_contigs_names and cont_name not in aligned_contigs_for_each_ref[ref_name]:
-                        # Collecting all aligned contigs names in order to futher extract not-aligned
-                        aligned_contig_names.add(cont_name)
-                        aligned_contigs_for_each_ref[ref_name].append(cont_name)
-                        fastaparser.write_fasta(ref_contigs_fpath, [(cont_name, seq)], 'a')
-
-                ref_asm = Assembly(ref_contigs_fpath, assembly_label)
-                if ref_asm.name not in added_ref_asm:
-                    if ref_name in assemblies_by_ref:
-                        assemblies_by_ref[ref_name].append(ref_asm)
-                        added_ref_asm.append(ref_asm.name)
-
-    # Exctraction not aligned contigs
-    all_contigs_names = set(contigs.keys())
-    not_aligned_contigs_names = all_contigs_names - aligned_contig_names
-    fastaparser.write_fasta(not_aligned_fpath, [(name, contigs[name]) for name in not_aligned_contigs_names])
-
-    not_aligned_asm = Assembly(not_aligned_fpath, asm.label)
-    return assemblies_by_ref, not_aligned_asm
-
-
-def _partition_contigs(assemblies, ref_fpaths, corrected_dirpath, alignments_fpath_template, labels):
-    # not_aligned_anywhere_dirpath = os.path.join(output_dirpath, 'contigs_not_aligned_anywhere')
-    # if os.path.isdir(not_aligned_anywhere_dirpath):
-    #     os.rmdir(not_aligned_anywhere_dirpath)
-    # os.mkdir(not_aligned_anywhere_dirpath)
-
-    # array of assemblies for each reference
-    assemblies_by_ref = dict([(qutils.name_from_fpath(ref_fpath), []) for ref_fpath in ref_fpaths])
-    n_jobs = min(qconfig.max_threads, len(assemblies))
-    from joblib import Parallel, delayed
-    assemblies = Parallel(n_jobs=n_jobs)(delayed(parallel_partition_contigs)(asm,
-                                assemblies_by_ref, corrected_dirpath, alignments_fpath_template) for asm in assemblies)
-    assemblies_dicts = [assembly[0] for assembly in assemblies]
-    assemblies_by_ref = []
-    for ref_fpath in ref_fpaths:
-        ref_name = qutils.name_from_fpath(ref_fpath)
-        not_sorted_assemblies = set([val for sublist in (assemblies_dicts[i][ref_name] for i in range(len(assemblies_dicts))) for val in sublist])
-        sorted_assemblies = []
-        for label in labels:  # sort by label
-            for assembly in not_sorted_assemblies:
-                if assembly.label == label:
-                    sorted_assemblies.append(assembly)
-                    break
-        assemblies_by_ref.append((ref_fpath, sorted_assemblies))
-    not_aligned_assemblies = [assembly[1] for assembly in assemblies]
-    return assemblies_by_ref, not_aligned_assemblies
-
-
-# class LoggingIndentFormatter(logging.Formatter):
-#     def __init__(self, fmt):
-#         logging.Formatter.__init__(self, fmt)
-#
-#     def format(self, record):
-#         indent = '\t'
-#         msg = logging.Formatter.format(self, record)
-#         return '\n'.join([indent + x for x in msg.split('\n')])
-
-
-def _start_quast_main(
-        name, args, assemblies, reference_fpath=None,
-        output_dirpath=None, exit_on_exception=True, num_notifications_tuple=None, is_first_run=None):
+def _start_quast_main(args, assemblies, reference_fpath=None, output_dirpath=None, num_notifications_tuple=None,
+                      labels=None, run_regular_quast=False, is_combined_ref=False, is_parallel_run=False):
     args = args[:]
 
     args.extend([asm.fpath for asm in assemblies])
@@ -149,418 +57,121 @@ def _start_quast_main(
     args.append(quote(', '.join([asm.label for asm in assemblies])))
 
     import quast
-    reload(quast)
+    try:
+        import importlib
+        importlib.reload(quast)
+    except (ImportError, AttributeError):
+        reload(quast)
     quast.logger.set_up_console_handler(indent_val=1, debug=qconfig.debug)
-    quast.logger.set_up_metaquast()
-    logger.info_to_file('(logging to ' +
-                        os.path.join(output_dirpath,
-                                     qconfig.LOGGER_DEFAULT_NAME + '.log)'))
-    # try:
+    if not run_regular_quast:
+        reference_name = os.path.basename(qutils.name_from_fpath(reference_fpath)) if reference_fpath else None
+        quast.logger.set_up_metaquast(is_parallel_run=is_parallel_run, ref_name=reference_name)
+    if is_combined_ref:
+        logger.info_to_file('(logging to ' +
+                        os.path.join(output_dirpath, qconfig.LOGGER_DEFAULT_NAME + '.log)'))
     return_code = quast.main(args)
     if num_notifications_tuple:
         cur_num_notifications = quast.logger.get_numbers_of_notifications()
-        num_notifications_tuple = map(sum, zip(num_notifications_tuple,cur_num_notifications))
+        num_notifications_tuple = list(map(sum, zip(num_notifications_tuple, cur_num_notifications)))
 
-    if is_first_run:
-        labels = [qconfig.assembly_labels_by_fpath[fpath] for fpath in qconfig.assemblies_fpaths]
-        assemblies = [Assembly(fpath, qconfig.assembly_labels_by_fpath[fpath]) for fpath in qconfig.assemblies_fpaths]
-        return return_code, num_notifications_tuple, assemblies, labels
+    if is_combined_ref:
+        labels[:] = [qconfig.assembly_labels_by_fpath[fpath] for fpath in qconfig.assemblies_fpaths]
+        assemblies[:] = [Assembly(fpath, qconfig.assembly_labels_by_fpath[fpath]) for fpath in qconfig.assemblies_fpaths]
+
+    return return_code, num_notifications_tuple
+
+
+def _run_quast_per_ref(quast_py_args, output_dirpath_per_ref, ref_fpath, ref_assemblies, total_num_notifications, is_parallel_run=False):
+    ref_name = qutils.name_from_fpath(ref_fpath)
+    if not ref_assemblies:
+        logger.main_info('\nNo contigs were aligned to the reference ' + ref_name + ', skipping..')
+        return None, None, total_num_notifications
     else:
-        return return_code, num_notifications_tuple
+        output_dirpath = os.path.join(output_dirpath_per_ref, ref_name)
+        run_name = 'for the contigs aligned to ' + ref_name
+        logger.main_info('\nStarting quast.py ' + run_name +
+                         '... (logging to ' + os.path.join(output_dirpath, qconfig.LOGGER_DEFAULT_NAME) + '.log)')
 
-    # except Exception, (errno, strerror):
-    #     if exit_on_exception:
-    #         logger.exception(e)
-    #     else:
-    #         msg = 'Error running quast.py' + (' ' + name if name else '')
-    #         msg += ': ' + e.strerror
-    #         if e.message:
-    #             msg += ', ' + e.message
-    #         logger.error(msg)
-
-
-def _correct_contigs(contigs_fpaths, output_dirpath, labels):
-    assemblies = [Assembly(contigs_fpaths[i], labels[i]) for i in range(len(contigs_fpaths))]
-    corr_assemblies = []
-    for file_counter, (contigs_fpath, label) in enumerate(zip(contigs_fpaths, labels)):
-        contigs_fname = os.path.basename(contigs_fpath)
-        fname, ctg_fasta_ext = qutils.splitext_for_fasta_file(contigs_fname)
-
-        corr_fpath = qutils.unique_corrected_fpath(
-            os.path.join(output_dirpath, qconfig.corrected_dirname, label + ctg_fasta_ext))
-
-        corr_assemblies.append(Assembly(corr_fpath, label))
-        logger.main_info('  ' + qutils.index_to_str(file_counter, force=(len(labels) > 1)) + '%s ==> %s' % (contigs_fpath, label))
-
-    return assemblies, corr_assemblies
-
-
-def get_label_from_par_dir_and_fname(contigs_fpath):
-    abspath = os.path.abspath(contigs_fpath)
-    name = qutils.rm_extentions_for_fasta_file(os.path.basename(contigs_fpath))
-    label = os.path.basename(os.path.dirname(abspath)) + '_' + name
-    return label
-
-
-def _correct_references(ref_fpaths, corrected_dirpath):
-    corrected_ref_fpaths = []
-
-    combined_ref_fpath = os.path.join(corrected_dirpath, COMBINED_REF_FNAME)
-
-    chromosomes_by_refs = {}
-
-    def correct_seq(seq_name, seq, ref_name, ref_fasta_ext, total_references, ref_fpath):
-        seq_fname = ref_name
-        seq_fname += ref_fasta_ext
-
-        if total_references > 1:
-            corr_seq_fpath = corrected_ref_fpaths[-1]
-        else:
-            corr_seq_fpath = qutils.unique_corrected_fpath(os.path.join(corrected_dirpath, seq_fname))
-            corrected_ref_fpaths.append(corr_seq_fpath)
-        corr_seq_name = qutils.name_from_fpath(corr_seq_fpath)
-        corr_seq_name += '_' + qutils.correct_name(seq_name[:20])
-        if not qconfig.no_check:
-            corr_seq = seq.upper()
-            dic = {'M': 'N', 'K': 'N', 'R': 'N', 'Y': 'N', 'W': 'N', 'S': 'N', 'V': 'N', 'B': 'N', 'H': 'N', 'D': 'N'}
-            pat = "(%s)" % "|".join(map(re.escape, dic.keys()))
-            corr_seq = re.sub(pat, lambda m: dic[m.group()], corr_seq)
-            if re.compile(r'[^ACGTN]').search(corr_seq):
-                logger.warning('Skipping ' + ref_fpath + ' because it contains non-ACGTN characters.',
-                        indent='    ')
-                return None, None
-
-        fastaparser.write_fasta(corr_seq_fpath, [(corr_seq_name, seq)], 'a')
-        fastaparser.write_fasta(combined_ref_fpath, [(corr_seq_name, seq)], 'a')
-
-        contigs_analyzer.ref_labels_by_chromosomes[corr_seq_name] = qutils.name_from_fpath(corr_seq_fpath)
-        chromosomes_by_refs[ref_name].append((corr_seq_name, len(seq)))
-
-        return corr_seq_name, corr_seq_fpath
-
-    ref_fnames = [os.path.basename(ref_fpath) for ref_fpath in ref_fpaths]
-    ref_names = []
-    for ref_fname in ref_fnames:
-        ref_name, ref_fasta_ext = qutils.splitext_for_fasta_file(ref_fname)
-        ref_names.append(ref_name)
-    dupl_ref_names = [ref_name for ref_name in ref_names if ref_names.count(ref_name) > 1]
-
-    for ref_fpath in ref_fpaths:
-        total_references = 0
-        ref_fname = os.path.basename(ref_fpath)
-        ref_name, ref_fasta_ext = qutils.splitext_for_fasta_file(ref_fname)
-        if ref_name in dupl_ref_names:
-            ref_name = get_label_from_par_dir_and_fname(ref_fpath)
-            
-        chromosomes_by_refs[ref_name] = []
-
-        corr_seq_fpath = None
-        for i, (seq_name, seq) in enumerate(fastaparser.read_fasta(ref_fpath)):
-            total_references += 1
-            corr_seq_name, corr_seq_fpath = correct_seq(seq_name, seq, ref_name, ref_fasta_ext, total_references, ref_fpath)
-            if not corr_seq_name:
-                break
-        if corr_seq_fpath:
-            logger.main_info('  ' + ref_fpath + ' ==> ' + qutils.name_from_fpath(corr_seq_fpath) + '')
-
-    logger.main_info('  All references combined in ' + COMBINED_REF_FNAME)
-
-    return corrected_ref_fpaths, combined_ref_fpath, chromosomes_by_refs, ref_fpaths
-
-
-def remove_unaligned_downloaded_refs(output_dirpath, ref_fpaths, chromosomes_by_refs):
-    genome_info_dirpath = os.path.join(output_dirpath, qconfig.combined_output_name, 'genome_stats')
-    genome_info_fpath = os.path.join(genome_info_dirpath, 'genome_info.txt')
-    refs_len = {}
-    with open(genome_info_fpath, 'r') as report_file:
-        report_file.readline()
-        for line in report_file:
-            if line == '\n' or not line:
-                break
-            line = line.split()
-            refs_len[line[0]] = (line[3], line[8])
-
-    corr_refs = []
-    for ref_fpath in ref_fpaths:
-        ref_fname = os.path.basename(ref_fpath)
-        ref, ref_fasta_ext = qutils.splitext_for_fasta_file(ref_fname)
-        aligned_len = 0
-        all_len = 0
-        for chromosome in chromosomes_by_refs[ref]:
-            if chromosome[0] in refs_len:
-                aligned_len += int(refs_len[chromosome[0]][1])
-                all_len += int(refs_len[chromosome[0]][0])
-        if aligned_len > all_len * 0.1 and aligned_len > 0:
-            corr_refs.append(ref_fpath)
-    return corr_refs
-
-
-# safe remove from quast_py_args, e.g. removes correctly "--test-no" (full is "--test-no-ref") and corresponding argument
-def __remove_from_quast_py_args(quast_py_args, opt, arg=None):
-    opt_idx = None
-    if opt in quast_py_args:
-        opt_idx = quast_py_args.index(opt)
-    if opt_idx is None:
-        common_length = -1
-        for idx, o in enumerate(quast_py_args):
-            if opt.startswith(o):
-                if len(o) > common_length:
-                    opt_idx = idx
-                    common_length = len(o)
-    if opt_idx is not None:
-        if arg:
-            del quast_py_args[opt_idx + 1]
-        del quast_py_args[opt_idx]
-    return quast_py_args
+        return_code, total_num_notifications = _start_quast_main(quast_py_args,
+                                                                 assemblies=ref_assemblies,
+                                                                 reference_fpath=ref_fpath,
+                                                                 output_dirpath=output_dirpath,
+                                                                 num_notifications_tuple=total_num_notifications,
+                                                                 is_parallel_run=is_parallel_run)
+        json_text = None
+        if qconfig.html_report:
+            from quast_libs.html_saver import json_saver
+            json_text = json_saver.json_text
+        return ref_name, json_text, total_num_notifications
 
 
 def main(args):
-    if ' ' in qconfig.QUAST_HOME:
-        logger.error('QUAST does not support spaces in paths. \n'
-                     'You are trying to run it from ' + str(qconfig.QUAST_HOME) + '\n'
-                     'Please, put QUAST in a different directory, then try again.\n',
-                     to_stderr=True,
-                     exit_with_code=3)
+    check_dirpath(qconfig.QUAST_HOME, 'You are trying to run it from ' + str(qconfig.QUAST_HOME) + '.\n' +
+                  'Please, put QUAST in a different directory, then try again.\n', exit_code=3)
 
     if not args:
-        qconfig.usage(meta=True)
-        sys.exit(0)
+        qconfig.usage(stream=sys.stderr)
+        sys.exit(1)
 
-    genes = []
-    operons = []
+    metaquast_path = [os.path.realpath(__file__)]
+    quast_py_args, contigs_fpaths = parse_options(logger, metaquast_path + args)
+    output_dirpath, ref_fpaths, labels = qconfig.output_dirpath, qconfig.reference, qconfig.labels
     html_report = qconfig.html_report
-    make_latest_symlink = True
-    ref_txt_fpath = None
-
-    try:
-        options, contigs_fpaths = getopt.gnu_getopt(args, qconfig.short_options, qconfig.long_options)
-    except getopt.GetoptError:
-        _, exc_value, _ = sys.exc_info()
-        print >> sys.stderr, exc_value
-        print >> sys.stderr
-        qconfig.usage(meta=True)
-        sys.exit(2)
-
-    quast_py_args = args[:]
-    test_mode = False
-
-    for opt, arg in options:
-        if opt in ('-d', '--debug'):
-            options.remove((opt, arg))
-            qconfig.debug = True
-            logger.set_up_console_handler(debug=True)
-
-        elif opt == '--test' or opt == '--test-no-ref':
-            options.remove((opt, arg))
-            quast_py_args = __remove_from_quast_py_args(quast_py_args, opt)
-            options += [('-o', 'quast_test_output')]
-            if opt == '--test':
-                options += [('-R', ','.join([os.path.join(qconfig.QUAST_HOME, 'test_data', 'meta_ref_1.fasta'),
-                            os.path.join(qconfig.QUAST_HOME, 'test_data', 'meta_ref_2.fasta'),
-                            os.path.join(qconfig.QUAST_HOME, 'test_data', 'meta_ref_3.fasta')]))]
-            contigs_fpaths += [os.path.join(qconfig.QUAST_HOME, 'test_data', 'meta_contigs_1.fasta'),
-                               os.path.join(qconfig.QUAST_HOME, 'test_data', 'meta_contigs_2.fasta')]
-            test_mode = True
-
-        elif opt.startswith('--help') or opt == '-h':
-            qconfig.usage(opt == "--help-hidden", meta=True, short=False)
-            sys.exit(0)
-
-        elif opt.startswith('--version') or opt == '-v':
-            qconfig.print_version(meta=True)
-            sys.exit(0)
-
-    if not contigs_fpaths:
-        logger.error("You should specify at least one file with contigs!\n")
-        qconfig.usage(meta=True)
-        sys.exit(2)
-
-    ref_fpaths = []
-    combined_ref_fpath = ''
-    reads_fpath_f = ''
-    reads_fpath_r = ''
-    output_dirpath = None
-
-    labels = None
-    all_labels_from_dirs = False
-
-    for opt, arg in options:
-        if opt in ('-o', "--output-dir"):
-            # Removing output dir arg in order to further
-            # construct other quast calls from this options
-            if opt in quast_py_args and arg in quast_py_args:
-                quast_py_args = __remove_from_quast_py_args(quast_py_args, opt, arg)
-
-            output_dirpath = os.path.abspath(arg)
-            make_latest_symlink = False
-
-        elif opt in ('-G', "--genes"):
-            assert_file_exists(arg, 'genes')
-            genes += arg
-
-        elif opt in ('-O', "--operons"):
-            assert_file_exists(arg, 'operons')
-            operons += arg
-
-        elif opt in ('-R', "--reference"):
-            # Removing reference args in order to further
-            # construct quast calls from this args with other reference options
-            if opt in quast_py_args and arg in quast_py_args:
-                quast_py_args = __remove_from_quast_py_args(quast_py_args, opt, arg)
-            if os.path.isdir(arg):
-                ref_fpaths = [os.path.join(path,file) for (path, dirs, files) in os.walk(arg) for file in files if qutils.check_is_fasta_file(file)]
-                ref_fpaths.sort()
-            else:
-                ref_fpaths = arg.split(',')
-                for i, ref_fpath in enumerate(ref_fpaths):
-                    assert_file_exists(ref_fpath, 'reference')
-                    ref_fpaths[i] = ref_fpath
-
-        elif opt == '--max-ref-number':
-            quast_py_args = __remove_from_quast_py_args(quast_py_args, opt, arg)
-            qconfig.max_references = int(arg)
-            if qconfig.max_references < 0:
-                qconfig.max_references = 0
-
-        elif opt in ('-m', "--min-contig"):
-            qconfig.min_contig = int(arg)
-
-        elif opt in ('-t', "--threads"):
-            qconfig.max_threads = int(arg)
-            if qconfig.max_threads < 1:
-                qconfig.max_threads = 1
-
-        elif opt in ('-l', '--labels'):
-            quast_py_args = __remove_from_quast_py_args(quast_py_args, opt, arg)
-            labels = quast.parse_labels(arg, contigs_fpaths)
-
-        elif opt == '-L':
-            quast_py_args = __remove_from_quast_py_args(quast_py_args, opt)
-            all_labels_from_dirs = True
-
-        elif opt in ('-j', '--save-json'):
-            pass
-        elif opt in ('-J', '--save-json-to'):
-            pass
-        elif opt == "--contig-thresholds":
-            pass
-        elif opt in ('-c', "--mincluster"):
-            pass
-        elif opt == "--est-ref-size":
-            pass
-        elif opt == "--gene-thresholds":
-            pass
-        elif opt in ('-s', "--scaffolds"):
-            pass
-        elif opt == "--gage":
-            pass
-        elif opt == "--debug":
-            pass
-        elif opt in ('-e', "--eukaryote"):
-            pass
-        elif opt in ('-f', "--gene-finding"):
-            pass
-        elif opt in ('-i', "--min-alignment"):
-            pass
-        elif opt in ('-c', "--min-cluster"):
-            pass
-        elif opt in ('-a', "--ambiguity-usage"):
-            pass
-        elif opt in ('-u', "--use-all-alignments"):
-            pass
-        elif opt == "--strict-NA":
-            pass
-        elif opt in ('-x', "--extensive-mis-size"):
-            pass
-        elif opt == "--meta":
-            pass
-        elif opt == '--references-list':
-            ref_txt_fpath = arg
-        elif opt == '--glimmer':
-            pass
-        elif opt == '--no-snps':
-            pass
-        elif opt == '--no-check':
-            pass
-        elif opt == '--no-gc':
-            pass
-        elif opt == '--no-plots':
-            pass
-        elif opt == '--no-html':
-            html_report = False
-        elif opt == '--fast':  # --no-check, --no-gc, --no-snps will automatically set in QUAST runs
-            html_report = False
-        elif opt == '--plots-format':
-            pass
-        elif opt == '--memory-efficient':
-            pass
-        elif opt == '--silent':
-            qconfig.silent = True
-        elif opt in ('-1', '--reads1'):
-            reads_fpath_f = arg
-            quast_py_args = __remove_from_quast_py_args(quast_py_args, opt, arg)
-        elif opt in ('-2', '--reads2'):
-            reads_fpath_r = arg
-            quast_py_args = __remove_from_quast_py_args(quast_py_args, opt, arg)
-        elif opt == '--contig-alignment-html':
-            qconfig.create_contig_alignment_html = True
-        else:
-            logger.error('Unknown option: %s. Use -h for help.' % (opt + ' ' + arg), to_stderr=True, exit_with_code=2)
-
-    for c_fpath in contigs_fpaths:
-        assert_file_exists(c_fpath, 'contigs')
-
-    labels = quast.process_labels(contigs_fpaths, labels, all_labels_from_dirs)
-
-    for contigs_fpath in contigs_fpaths:
-        if contigs_fpath in quast_py_args:
-            quast_py_args.remove(contigs_fpath)
+    test_mode = qconfig.test
 
     # Directories
-    output_dirpath, _, _ = quast._set_up_output_dir(
-        output_dirpath, None, make_latest_symlink,
+    output_dirpath, _, _ = qutils.set_up_output_dir(
+        output_dirpath, None, not output_dirpath,
         save_json=False)
 
     corrected_dirpath = os.path.join(output_dirpath, qconfig.corrected_dirname)
 
-    logger.set_up_file_handler(output_dirpath)
-    args = [os.path.realpath(__file__)]
-    for k, v in options: args.extend([k, v])
-    args.extend(contigs_fpaths)
-    logger.print_command_line(args, wrap_after=None)
-    logger.start()
-
     qconfig.set_max_threads(logger)
+    qutils.logger = logger
 
     ########################################################################
 
-    from libs import reporting
-    reload(reporting)
+    from quast_libs import reporting
+    try:
+        import importlib
+        importlib.reload(reporting)
+    except (ImportError, AttributeError):
+        reload(reporting)
+    from quast_libs import plotter
 
     if os.path.isdir(corrected_dirpath):
         shutil.rmtree(corrected_dirpath)
     os.mkdir(corrected_dirpath)
 
     # PROCESSING REFERENCES
-
     if ref_fpaths:
         logger.main_info()
         logger.main_info('Reference(s):')
 
         corrected_ref_fpaths, combined_ref_fpath, chromosomes_by_refs, ref_names =\
-            _correct_references(ref_fpaths, corrected_dirpath)
+            correct_meta_references(ref_fpaths, corrected_dirpath)
 
     # PROCESSING CONTIGS
     logger.main_info()
     logger.main_info('Contigs:')
-    assemblies, correct_assemblies = _correct_contigs(contigs_fpaths, output_dirpath, labels)
+    qconfig.no_check_meta = True
+    assemblies, labels = correct_assemblies(contigs_fpaths, output_dirpath, labels)
     if not assemblies:
         logger.error("None of the assembly files contains correct contigs. "
                      "Please, provide different files or decrease --min-contig threshold.")
         return 4
 
     # Running QUAST(s)
-    quast_py_args += ['--meta']
+    if qconfig.gene_finding:
+        quast_py_args += ['--mgm']
+    if qconfig.min_IDY is None: # special case: user not specified min-IDY, so we need to use MetaQUAST default value
+        quast_py_args += ['--min-identity', str(qconfig.META_MIN_IDY)]
+
+    if qconfig.reuse_combined_alignments:
+        reuse_combined_alignments = True
+    else:
+        reuse_combined_alignments = False
+
     downloaded_refs = False
 
     # SEARCHING REFERENCES
@@ -569,7 +180,7 @@ def main(args):
         if qconfig.max_references == 0:
             logger.notice("Maximum number of references (--max-ref-number) is set to 0, search in SILVA 16S rRNA database is disabled")
         else:
-            if ref_txt_fpath:
+            if qconfig.references_txt:
                 logger.main_info("List of references was provided, starting to download reference genomes from NCBI...")
             else:
                 logger.main_info("No references are provided, starting to search for reference genomes in SILVA 16S rRNA database "
@@ -577,16 +188,17 @@ def main(args):
             downloaded_dirpath = os.path.join(output_dirpath, qconfig.downloaded_dirname)
             if not os.path.isdir(downloaded_dirpath):
                 os.mkdir(downloaded_dirpath)
-            ref_fpaths = search_references_meta.do(assemblies, labels, downloaded_dirpath, ref_txt_fpath)
+            corrected_dirpath = os.path.join(output_dirpath, qconfig.corrected_dirname)
+            ref_fpaths = search_references_meta.do(assemblies, labels, downloaded_dirpath, corrected_dirpath, qconfig.references_txt)
             if ref_fpaths:
                 search_references_meta.is_quast_first_run = True
-                if not ref_txt_fpath:
+                if not qconfig.references_txt:
                     downloaded_refs = True
                 logger.main_info()
                 logger.main_info('Downloaded reference(s):')
                 corrected_ref_fpaths, combined_ref_fpath, chromosomes_by_refs, ref_names =\
-                    _correct_references(ref_fpaths, corrected_dirpath)
-            elif test_mode and ref_fpaths is None:
+                    correct_meta_references(ref_fpaths, corrected_dirpath, downloaded_refs=True)
+            elif test_mode and not ref_fpaths:
                 logger.error('Failed to download or setup SILVA 16S rRNA database for working without '
                              'references on metagenome datasets!', to_stderr=True, exit_with_code=4)
 
@@ -594,31 +206,26 @@ def main(args):
         # No references, running regular quast with MetaGenemark gene finder
         logger.main_info()
         logger.notice('No references are provided, starting regular QUAST with MetaGeneMark gene finder')
-        _start_quast_main(
-            None,
-            quast_py_args,
-            assemblies=assemblies,
-            output_dirpath=output_dirpath,
-            exit_on_exception=True)
+        assemblies = [Assembly(fpath, qutils.label_from_fpath(fpath)) for fpath in contigs_fpaths]
+        _start_quast_main(quast_py_args, assemblies=assemblies, output_dirpath=output_dirpath, run_regular_quast=True)
         exit(0)
 
     # Running combined reference
     combined_output_dirpath = os.path.join(output_dirpath, qconfig.combined_output_name)
+    qconfig.reference = combined_ref_fpath
 
-    reads_fpaths = []
-    if reads_fpath_f:
-        reads_fpaths.append(reads_fpath_f)
-    if reads_fpath_r:
-        reads_fpaths.append(reads_fpath_r)
-    if reads_fpaths:
-        bed_fpath = reads_analyzer.do(combined_ref_fpath, contigs_fpaths, reads_fpaths, corrected_ref_fpaths,
-                                      os.path.join(combined_output_dirpath, qconfig.variation_dirname),
-                                      external_logger=logger)
-        if bed_fpath:
-            quast_py_args += ['--bed-file']
-            quast_py_args += [bed_fpath]
+    if qconfig.bed:
+        quast_py_args += ['--sv-bed']
+        quast_py_args += [qconfig.bed]
 
     quast_py_args += ['--combined-ref']
+    if qconfig.draw_plots or qconfig.html_report:
+        if plotter_data.dict_color_and_ls:
+            colors_and_ls = [plotter_data.dict_color_and_ls[asm.label] for asm in assemblies]
+            quast_py_args += ['--colors']
+            quast_py_args += [','.join([style[0] for style in colors_and_ls])]
+            quast_py_args += ['--ls']
+            quast_py_args += [','.join([style[1] for style in colors_and_ls])]
     run_name = 'for the combined reference'
     logger.main_info()
     logger.main_info('Starting quast.py ' + run_name + '...')
@@ -627,42 +234,64 @@ def main(args):
     total_num_nf_errors = 0
     total_num_notifications = (total_num_notices, total_num_warnings, total_num_nf_errors)
     if qconfig.html_report:
-        from libs.html_saver import json_saver
+        from quast_libs.html_saver import json_saver
         json_texts = []
     else:
         json_texts = None
-    return_code, total_num_notifications, assemblies, labels = _start_quast_main(run_name, quast_py_args + ["--ambiguity-usage"] + ['all'],
+    if qconfig.unique_mapping:
+        ambiguity_opts = []
+    else:
+        ambiguity_opts = ["--ambiguity-usage", 'all']
+    return_code, total_num_notifications = \
+        _start_quast_main(quast_py_args + ambiguity_opts,
+        labels=labels,
         assemblies=assemblies,
         reference_fpath=combined_ref_fpath,
         output_dirpath=combined_output_dirpath,
-        num_notifications_tuple=total_num_notifications, is_first_run=True)
-    for arg in args:
-        if arg in ('-s', "--scaffolds"):
-            quast_py_args.remove(arg)
+        num_notifications_tuple=total_num_notifications,
+        is_combined_ref=True)
 
     if json_texts is not None:
         json_texts.append(json_saver.json_text)
     search_references_meta.is_quast_first_run = False
 
-    if downloaded_refs:
+    genome_info_dirpath = os.path.join(output_dirpath, qconfig.combined_output_name, 'genome_stats')
+    genome_info_fpath = os.path.join(genome_info_dirpath, 'genome_info.txt')
+    if not os.path.exists(genome_info_fpath):
+        logger.main_info('')
+        if not downloaded_refs:
+            msg = 'Try to restart MetaQUAST with another references.'
+        else:
+            msg = 'Try to use option --max-ref-number to change maximum number of references (per each assembly) to download.'
+        logger.main_info('Failed aligning the contigs for all the references. ' + msg)
+        logger.main_info('')
+        cleanup(corrected_dirpath)
+        logger.main_info('MetaQUAST finished.')
+        return logger.finish_up(numbers=tuple(total_num_notifications), check_test=test_mode)
+
+    if downloaded_refs and return_code == 0:
         logger.main_info()
         logger.main_info('Excluding downloaded references with low genome fraction from further analysis..')
-        corr_ref_fpaths = remove_unaligned_downloaded_refs(output_dirpath, ref_fpaths, chromosomes_by_refs)
+        corr_ref_fpaths = get_downloaded_refs_with_alignments(genome_info_fpath, ref_fpaths, chromosomes_by_refs)
         if corr_ref_fpaths and corr_ref_fpaths != ref_fpaths:
             logger.main_info()
             logger.main_info('Filtered reference(s):')
             os.remove(combined_ref_fpath)
-            contigs_analyzer.ref_labels_by_chromosomes = {}
-            corrected_ref_fpaths, combined_ref_fpath, chromosomes_by_refs, ref_names =\
-                    _correct_references(corr_ref_fpaths, corrected_dirpath)
+            contigs_analyzer.ref_labels_by_chromosomes = OrderedDict()
+            corrected_ref_fpaths, combined_ref_fpath, chromosomes_by_refs, ref_names = \
+                correct_meta_references(corr_ref_fpaths, corrected_dirpath)
+            assemblies, labels = correct_assemblies(contigs_fpaths, output_dirpath, labels)
             run_name = 'for the corrected combined reference'
             logger.main_info()
             logger.main_info('Starting quast.py ' + run_name + '...')
-            return_code, total_num_notifications, assemblies, labels = _start_quast_main(run_name, quast_py_args + ["--ambiguity-usage"] + ['all'],
+            return_code, total_num_notifications = \
+                _start_quast_main(quast_py_args + ambiguity_opts,
+                labels=labels,
                 assemblies=assemblies,
                 reference_fpath=combined_ref_fpath,
                 output_dirpath=combined_output_dirpath,
-                num_notifications_tuple=total_num_notifications, is_first_run=True)
+                num_notifications_tuple=total_num_notifications,
+                is_combined_ref=True)
             if json_texts is not None:
                 json_texts = json_texts[:-1]
                 json_texts.append(json_saver.json_text)
@@ -671,41 +300,51 @@ def main(args):
         else:
             logger.main_info('All downloaded references have low genome fraction. Nothing was excluded for now.')
 
-    quast_py_args += ['--no-check-meta']
-    qconfig.contig_thresholds = ','.join([str(threshold) for threshold in qconfig.contig_thresholds if threshold > qconfig.min_contig])
-    if not qconfig.contig_thresholds:
-        qconfig.contig_thresholds = 'None'
-    quast_py_args = __remove_from_quast_py_args(quast_py_args, '--contig-thresholds', qconfig.contig_thresholds)
-    quast_py_args += ['--contig-thresholds']
-    quast_py_args += [qconfig.contig_thresholds]
-    quast_py_args.remove('--combined-ref')
+    if return_code != 0:
+        logger.main_info('MetaQUAST finished.')
+        return logger.finish_up(numbers=tuple(total_num_notifications), check_test=test_mode)
 
+    if qconfig.calculate_read_support:
+        calculate_ave_read_support(combined_output_dirpath, assemblies)
+
+    prepare_regular_quast_args(quast_py_args, combined_output_dirpath, reuse_combined_alignments)
     logger.main_info()
     logger.main_info('Partitioning contigs into bins aligned to each reference..')
 
-    assemblies_by_reference, not_aligned_assemblies = _partition_contigs(
+    assemblies_by_reference, not_aligned_assemblies = partition_contigs(
         assemblies, corrected_ref_fpaths, corrected_dirpath,
-        os.path.join(combined_output_dirpath, 'contigs_reports', 'alignments_%s.tsv'), labels)
+        os.path.join(combined_output_dirpath, qconfig.detailed_contigs_reports_dirname, 'alignments_%s.tsv'), labels)
 
-    ref_names = []
     output_dirpath_per_ref = os.path.join(output_dirpath, qconfig.per_ref_dirname)
-    for ref_fpath, ref_assemblies in assemblies_by_reference:
-        ref_name = qutils.name_from_fpath(ref_fpath)
-        logger.main_info('')
-        if not ref_assemblies:
-            logger.main_info('No contigs were aligned to the reference ' + ref_name + ', skipping..')
-        else:
-            ref_names.append(ref_name)
-            run_name = 'for the contigs aligned to ' + ref_name
-            logger.main_info('Starting quast.py ' + run_name)
+    if not qconfig.memory_efficient and \
+                    len(assemblies_by_reference) > len(assemblies) and len(assemblies) < qconfig.max_threads:
+        logger.main_info()
+        logger.main_info('Run QUAST on different references in parallel..')
+        threads_per_ref = max(1, qconfig.max_threads // len(assemblies_by_reference))
+        quast_py_args += ['--memory-efficient']
+        quast_py_args += ['-t', str(threads_per_ref)]
 
-            return_code, total_num_notifications = _start_quast_main(run_name, quast_py_args,
-                assemblies=ref_assemblies,
-                reference_fpath=ref_fpath,
-                output_dirpath=os.path.join(output_dirpath_per_ref, ref_name),
-                exit_on_exception=False, num_notifications_tuple=total_num_notifications)
+        num_notifications = (0, 0, 0)
+        parallel_run_args = [(quast_py_args, output_dirpath_per_ref, ref_fpath, ref_assemblies, num_notifications, True)
+                             for ref_fpath, ref_assemblies in assemblies_by_reference]
+        ref_names, ref_json_texts, ref_notifications = \
+            run_parallel(_run_quast_per_ref, parallel_run_args, qconfig.max_threads, filter_results=True)
+        per_ref_num_notifications = list(map(sum, zip(*ref_notifications)))
+        total_num_notifications = list(map(sum, zip(total_num_notifications, per_ref_num_notifications)))
+        if json_texts is not None:
+            json_texts.extend(ref_json_texts)
+        quast_py_args.remove('--memory-efficient')
+        quast_py_args = remove_from_quast_py_args(quast_py_args, '-t', str(threads_per_ref))
+    else:
+        ref_names = []
+        for ref_fpath, ref_assemblies in assemblies_by_reference:
+            ref_name, json_text, total_num_notifications = \
+                _run_quast_per_ref(quast_py_args, output_dirpath_per_ref, ref_fpath, ref_assemblies, total_num_notifications)
+            if not ref_name:
+                continue
+            ref_names.append(ref_name)
             if json_texts is not None:
-                json_texts.append(json_saver.json_text)
+                json_texts.append(json_text)
 
     # Finally running for the contigs that has not been aligned to any reference
     no_unaligned_contigs = True
@@ -719,12 +358,13 @@ def main(args):
     if no_unaligned_contigs:
         logger.main_info('Skipping quast.py ' + run_name + ' (everything is aligned!)')
     else:
-        logger.main_info('Starting quast.py ' + run_name + '...')
+        logger.main_info('Starting quast.py ' + run_name + '... (logging to ' +
+                        os.path.join(output_dirpath, qconfig.not_aligned_name, qconfig.LOGGER_DEFAULT_NAME + '.log)'))
 
-        return_code, total_num_notifications = _start_quast_main(run_name, quast_py_args,
+        return_code, total_num_notifications = _start_quast_main(quast_py_args + ['-t', str(qconfig.max_threads)],
             assemblies=not_aligned_assemblies,
             output_dirpath=os.path.join(output_dirpath, qconfig.not_aligned_name),
-            exit_on_exception=False, num_notifications_tuple=total_num_notifications)
+            num_notifications_tuple=total_num_notifications)
 
         if return_code not in [0, 4]:
             logger.error('Error running quast.py for the contigs not aligned anywhere')
@@ -742,25 +382,31 @@ def main(args):
         if not os.path.isdir(summary_output_dirpath):
             os.makedirs(summary_output_dirpath)
         if html_report and json_texts:
-            from libs.html_saver import html_saver
+            from quast_libs.html_saver import html_saver
             html_summary_report_fpath = html_saver.init_meta_report(output_dirpath)
         else:
             html_summary_report_fpath = None
-        from libs import create_meta_summary
+        from quast_libs import create_meta_summary
         metrics_for_plots = reporting.Fields.main_metrics
-        misassembl_metrics = [reporting.Fields.MIS_RELOCATION, reporting.Fields.MIS_TRANSLOCATION, reporting.Fields.MIS_INVERTION,
-                           reporting.Fields.MIS_ISTRANSLOCATIONS]
-        create_meta_summary.do(html_summary_report_fpath, summary_output_dirpath, combined_output_dirpath, output_dirpath_per_ref, metrics_for_plots, misassembl_metrics,
-                               ref_names if no_unaligned_contigs else ref_names + [qconfig.not_aligned_name])
+        misassembly_metrics = [reporting.Fields.MIS_RELOCATION, reporting.Fields.MIS_TRANSLOCATION, reporting.Fields.MIS_INVERTION,
+                              reporting.Fields.MIS_ISTRANSLOCATIONS]
+        if no_unaligned_contigs:
+            full_ref_names = [qutils.name_from_fpath(ref_fpath) for ref_fpath in corrected_ref_fpaths]
+        else:
+            full_ref_names = [qutils.name_from_fpath(ref_fpath) for ref_fpath in corrected_ref_fpaths] + [qconfig.not_aligned_name]
+        create_meta_summary.do(html_summary_report_fpath, summary_output_dirpath, combined_output_dirpath,
+                               output_dirpath_per_ref, metrics_for_plots, misassembly_metrics, full_ref_names)
         if html_report and json_texts:
-            from libs import plotter
-            html_saver.save_colors(output_dirpath, contigs_fpaths, plotter.dict_color_and_ls, meta=True)
+            html_saver.save_colors(output_dirpath, contigs_fpaths, plotter_data.dict_color_and_ls, meta=True)
+            if qconfig.create_icarus_html:
+                icarus_html_fpath = html_saver.create_meta_icarus(output_dirpath, ref_names)
+                logger.main_info('  Icarus (contig browser) is saved to %s' % icarus_html_fpath)
             html_saver.create_meta_report(output_dirpath, json_texts)
 
-    quast._cleanup(corrected_dirpath)
+    cleanup(corrected_dirpath)
     logger.main_info('')
     logger.main_info('MetaQUAST finished.')
-    logger.finish_up(numbers=tuple(total_num_notifications), check_test=test_mode)
+    return logger.finish_up(numbers=tuple(total_num_notifications), check_test=test_mode)
 
 
 if __name__ == '__main__':
@@ -771,21 +417,3 @@ if __name__ == '__main__':
         _, exc_value, _ = sys.exc_info()
         logger.exception(exc_value)
         logger.error('exception caught!', exit_with_code=1, to_stderr=True)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

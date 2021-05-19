@@ -1,7 +1,7 @@
 #!/bin/bash
 
 ############################################################################
-# Copyright (c) 2015 Saint Petersburg State University
+# Copyright (c) 2015-2018 Saint Petersburg State University
 # Copyright (c) 2011-2015 Saint Petersburg Academic University
 # All Rights Reserved
 # See file LICENSE for details.
@@ -32,4 +32,5 @@ if [ $return_code -ne 0 ]; then
    exit 1
 fi
 echo 'QUAST INSTALLED SUCCESSFULLY!'
+echo 'You can install full version of QUAST with ./install_full.sh (see manual.html)'
 exit 0
